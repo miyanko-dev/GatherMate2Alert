@@ -1,9 +1,9 @@
-local ADDON_NAME = "GatherMate2NodePing"
+local ADDON_NAME = "GatherMate2NodeAlert"
 
 local REAPPEAR_AFTER = 180
 local ZONING_QUIET_TIME = 5
 local BUTTON_ICON = "Interface\\AddOns\\GatherMate2\\Artwork\\Icon"
-local PULSE_TEXTURE = "Interface\\AddOns\\GatherMate2NodePing\\pulse_ring"
+local PULSE_TEXTURE = "Interface\\AddOns\\GatherMate2NodeAlert\\pulse_ring"
 local PULSE_COLOR = { 1, 0.82, 0 }
 local DEFAULT_SOUND_ID = 3175  -- SOUNDKIT.MAP_PING (minimap ping)
 
@@ -221,7 +221,7 @@ local function setCheckboxLabel(checkButton, text)
 end
 
 local function buildPanel()
-    local f = CreateFrame("Frame", "GatherMate2NodePingPanel", UIParent, "BackdropTemplate")
+    local f = CreateFrame("Frame", "GatherMate2NodeAlertPanel", UIParent, "BackdropTemplate")
     f:SetSize(380, 1)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
@@ -233,7 +233,7 @@ local function buildPanel()
     f:SetClampedToScreen(true)
     applyPanelBackdrop(f)
 
-    buildTitleHeader(f, "Node Ping")
+    buildTitleHeader(f, "Node Alert")
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -2, -2)
@@ -466,7 +466,7 @@ local function buildPanel()
         resizePanel()
     end)
 
-    tinsert(UISpecialFrames, "GatherMate2NodePingPanel")
+    tinsert(UISpecialFrames, "GatherMate2NodeAlertPanel")
     f:Hide()
     return f
 end
@@ -480,7 +480,7 @@ end
 -- Minimap button
 
 local function renderTooltip(tooltip)
-    tooltip:AddLine("GatherMate2NodePing")
+    tooltip:AddLine("GatherMate2NodeAlert")
     tooltip:AddLine((db.enabled or db.pulse) and "Alert is on." or "Alert is off.", 1, 1, 1)
     tooltip:AddLine("|cffffd200Left-click|r opens the settings.", 1, 1, 1)
     tooltip:AddLine("|cffffd200Right-click|r toggles the alert.", 1, 1, 1)
@@ -543,8 +543,8 @@ events:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 events:SetScript("OnEvent", function(_, event, addonName)
     if event == "ADDON_LOADED" then
         if addonName == ADDON_NAME then
-            GatherMate2NodePingDB = GatherMate2NodePingDB or {}
-            db = GatherMate2NodePingDB
+            GatherMate2NodeAlertDB = GatherMate2NodeAlertDB or {}
+            db = GatherMate2NodeAlertDB
             if db.enabled == nil then db.enabled = true end
             if db.pulse == nil then db.pulse = true end
             db.minimap = db.minimap or {}

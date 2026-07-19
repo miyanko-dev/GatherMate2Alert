@@ -1,10 +1,10 @@
 ## Interface: 11508
-## Title: GatherMate2NodePing
+## Title: GatherMate2NodeAlert
 ## Notes: Plays the minimap ping sound when a GatherMate2 node enters minimap range.
 ## Version: 1.0.0
 ## Author: MIYANKO
 ## RequiredDeps: GatherMate2
 ## OptionalDeps: LibDataBroker-1.1, LibDBIcon-1.0
-## SavedVariables: GatherMate2NodePingDB
+## SavedVariables: GatherMate2NodeAlertDB
 
-GatherMate2NodePing.lua
+GatherMate2NodeAlert.lua
