@@ -18,7 +18,7 @@ local SOUND_PRESETS = {
     { name = "Murloc",         id = SOUNDKIT.MURLOC_AGGRO },
 }
 
-local COOLDOWNS = { 5, 10, 20, 30 }
+local COOLDOWNS = { 1, 3, 5, 10, 20, 30 }
 
 -- Layout spacing, mirrored from ChatScan so both addons share one look.
 local PAD = 16                  -- outer panel padding (sides + bottom)
@@ -58,6 +58,15 @@ pulseRing:SetAllPoints(pulse)
 pulseRing:SetTexture(PULSE_TEXTURE)
 pulseRing:SetVertexColor(unpack(PULSE_COLOR))
 
+-- The texture is a 4x2 atlas of rings from hairline to bold; the slider
+-- index picks a cell, runtime drawing is not possible in the client.
+local function applyThickness()
+    local index = (db and db.pulseThickness or 4) - 1
+    local col = index % 4
+    local row = math.floor(index / 4)
+    pulseRing:SetTexCoord(col * 0.25, (col + 1) * 0.25, row * 0.5, (row + 1) * 0.5)
+end
+
 local pulseAnim = pulse:CreateAnimationGroup()
 local fadeIn = pulseAnim:CreateAnimation("Alpha")
 fadeIn:SetFromAlpha(0)
@@ -71,13 +80,27 @@ fadeOut:SetDuration(0.8)
 fadeOut:SetOrder(2)
 pulseAnim:SetScript("OnFinished", function() pulse:Hide() end)
 
-local function ping()
+-- Tint the flash like the tracking circle that triggered it, so the color
+-- alone tells the node type; GatherMate2 keeps those colors per type in its
+-- profile, the same table its own circles are tinted from.
+local function firePulse(nodeType)
+    local colors = GatherMate.db.profile.trackColors
+    local color = nodeType and colors and colors[nodeType]
+    if color then
+        pulseRing:SetVertexColor(color.Red, color.Green, color.Blue)
+    else
+        pulseRing:SetVertexColor(unpack(PULSE_COLOR))
+    end
+    pulse:Show()
+    pulseAnim:Restart()
+end
+
+local function ping(nodeType)
     if db.enabled then
         PlaySound(db.soundId or DEFAULT_SOUND_ID, db.channel, true)
     end
     if db.pulse then
-        pulse:Show()
-        pulseAnim:Restart()
+        firePulse(nodeType)
     end
 end
 
@@ -108,7 +131,7 @@ hooksecurefunc(Display, "addMiniPin", function(_, pin)
     if now < quietUntil or now - lastPing < db.cooldown then return end
 
     lastPing = now
-    ping()
+    ping(pin.nodeType)
 end)
 
 ---------------------------------------------------------
@@ -245,7 +268,7 @@ local function buildPanel()
     end
 
     -- Alert
-    local alertContentH = CB_H + ROW_GAP + CB_H + ROW_GAP + ROW_H + ROW_GAP + CB_H
+    local alertContentH = CB_H + ROW_GAP + CB_H + HELPER_GAP + 16 + HELPER_GAP + ROW_H + ROW_GAP + CB_H
     local alertSection, alertContainer = makeContentSection(
         "Alert",
         "Plays when a trackable node comes within tracking range of the minimap.",
@@ -261,10 +284,40 @@ local function buildPanel()
     pulseCheck:SetPoint("TOPLEFT", soundCheck, "BOTTOMLEFT", 0, -ROW_GAP)
     setCheckboxLabel(pulseCheck, "Flash the minimap edge")
 
+    -- Ring thickness, built like AceGUI's slider since the client ships no
+    -- native slider template anymore. Releasing the thumb previews the flash.
+    local thicknessSlider = CreateFrame("Slider", nil, alertContainer, "BackdropTemplate")
+    thicknessSlider:SetOrientation("HORIZONTAL")
+    thicknessSlider:SetSize(160, 16)
+    thicknessSlider:SetHitRectInsets(0, 0, -10, 0)
+    thicknessSlider:SetBackdrop({
+        bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
+        edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
+        tile = true, tileSize = 8, edgeSize = 8,
+        insets = { left = 3, right = 3, top = 6, bottom = 6 },
+    })
+    thicknessSlider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+    thicknessSlider:SetMinMaxValues(1, 8)
+    thicknessSlider:SetValueStep(1)
+    thicknessSlider:SetObeyStepOnDrag(true)
+    thicknessSlider:SetPoint("TOPLEFT", pulseCheck, "BOTTOMLEFT", 4, -HELPER_GAP)
+    thicknessSlider:SetScript("OnValueChanged", function(_, value)
+        value = math.floor(value + 0.5)
+        if value ~= db.pulseThickness then
+            db.pulseThickness = value
+            applyThickness()
+        end
+    end)
+    thicknessSlider:SetScript("OnMouseUp", function() firePulse() end)
+
+    local thicknessLabel = alertContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    thicknessLabel:SetPoint("LEFT", thicknessSlider, "RIGHT", HELPER_GAP, 0)
+    thicknessLabel:SetText("Flash thickness")
+
     -- Named-sound picker. Choosing a sound saves it and plays it once as a preview.
     local soundDropdown = CreateFrame("DropdownButton", nil, alertContainer, "WowStyle1DropdownTemplate")
     soundDropdown:SetSize(160, ROW_H)
-    soundDropdown:SetPoint("TOPLEFT", pulseCheck, "BOTTOMLEFT", 0, -ROW_GAP)
+    soundDropdown:SetPoint("TOPLEFT", thicknessSlider, "BOTTOMLEFT", -4, -HELPER_GAP)
     soundDropdown:SetDefaultText("Choose a sound")
     soundDropdown:SetupMenu(function(_, root)
         for _, preset in ipairs(SOUND_PRESETS) do
@@ -285,6 +338,7 @@ local function buildPanel()
     testBtn:SetText("Test")
     testBtn:SetScript("OnClick", function()
         PlaySound(db.soundId or DEFAULT_SOUND_ID, db.channel, true)
+        firePulse()
     end)
 
     local channelCheck = CreateFrame("CheckButton", nil, alertContainer, "UICheckButtonTemplate")
@@ -304,7 +358,7 @@ local function buildPanel()
     cooldownDropdown:SetDefaultText("Cooldown")
     cooldownDropdown:SetupMenu(function(_, root)
         for _, secs in ipairs(COOLDOWNS) do
-            root:CreateRadio(secs .. " seconds",
+            root:CreateRadio(secs == 1 and "1 second" or (secs .. " seconds"),
                 function() return db.cooldown == secs end,
                 function()
                     db.cooldown = secs
@@ -401,6 +455,7 @@ local function buildPanel()
     f:SetScript("OnShow", function()
         soundCheck:SetChecked(db.enabled)
         pulseCheck:SetChecked(db.pulse)
+        thicknessSlider:SetValue(db.pulseThickness)
         channelCheck:SetChecked(db.channel == "Master")
         for nodeType, cb in pairs(typeChecks) do
             cb:SetChecked(not db.mutedTypes[nodeType])
@@ -497,9 +552,13 @@ events:SetScript("OnEvent", function(_, event, addonName)
             db.channel = db.channel or "SFX"
             db.mutedTypes = db.mutedTypes or {}
 
+            db.pulseThickness = db.pulseThickness or 4
+
             -- Older versions stored a SOUNDKIT key string in db.sound.
             db.soundId = db.soundId or (db.sound and SOUNDKIT[db.sound]) or DEFAULT_SOUND_ID
             db.sound = nil
+
+            applyThickness()
         end
     elseif event == "PLAYER_LOGIN" then
         setupMinimapButton()
