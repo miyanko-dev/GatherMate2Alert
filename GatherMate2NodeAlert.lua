@@ -58,13 +58,93 @@ pulseRing:SetAllPoints(pulse)
 pulseRing:SetTexture(PULSE_TEXTURE)
 pulseRing:SetVertexColor(unpack(PULSE_COLOR))
 
--- The texture is a 4x2 atlas of rings from hairline to bold; the slider
--- index picks a cell, runtime drawing is not possible in the client.
+-- The texture is a 4x4 atlas holding 10 rings from hairline to bold; the
+-- slider index picks a cell, runtime drawing is not possible in the client.
 local function applyThickness()
     local index = (db and db.pulseThickness or 4) - 1
     local col = index % 4
     local row = math.floor(index / 4)
-    pulseRing:SetTexCoord(col * 0.25, (col + 1) * 0.25, row * 0.5, (row + 1) * 0.5)
+    pulseRing:SetTexCoord(col * 0.25, (col + 1) * 0.25, row * 0.25, (row + 1) * 0.25)
+end
+
+-- GatherMate2 sizes tracking circles once, at 10 / Minimap:GetScale(), when
+-- a pin turns into a circle (Display.lua); resize right after in the
+-- addMiniPin hook so the slider choice sticks. Slider step 1 keeps the
+-- native 10px, each step adds 2px. Skip when already sized, the hook runs
+-- per pin on every map update.
+local function circleSize()
+    return (8 + 2 * (db and db.circleSize or 1)) / Minimap:GetScale()
+end
+
+local function applyCircleSize(pin)
+    local size = circleSize()
+    if math.abs(pin:GetHeight() - size) > 0.01 then
+        pin:SetSize(size, size)
+    end
+end
+
+-- Nearby nodes are separate spawns with distinct coordinates, so circles
+-- that overlap on screen must merge by pin distance, not by coordinate.
+-- GatherMate2 positions every pin through addMiniPin within a single
+-- frame, so the frame time works as the batch marker: circles whose
+-- centers fall within one circle-width of each other form a cluster and
+-- only its leader stays visible. Leadership goes to the lowest node
+-- coordinate, never to whichever pin arrived first: GatherMate2's full
+-- sweeps and its per-move updates iterate pins in different orders, and
+-- first-come leadership made the visible circle hop between cluster
+-- members instead of staying concentric with one real node. Full sweeps
+-- re-show all pins at least every two seconds, which heals any stale
+-- state after pins leave range or get recycled.
+local mergeStamp = 0
+local mergeLeaders = {}
+
+local function mergeCircle(pin)
+    -- GatherMate2 skips positioning when it hides an edge-faded pin, so
+    -- a hidden pin has a stale point and must not lead or merge.
+    if not pin:IsShown() then return end
+    local _, _, _, x, y = pin:GetPoint(1)
+    if not x then return end
+
+    local now = GetTime()
+    if mergeStamp ~= now then
+        mergeStamp = now
+        wipe(mergeLeaders)
+    end
+
+    -- A single-type cluster keeps that type's own circle color and only
+    -- grows; gold marks a cluster that mixes node types. Repainting the
+    -- type color also heals a leader that was gold a frame earlier.
+    local reach = circleSize()
+    for _, leader in ipairs(mergeLeaders) do
+        if leader.pin == pin then return end
+        local dx, dy = x - leader.x, y - leader.y
+        if dx * dx + dy * dy < reach * reach then
+            if pin.nodeType ~= leader.type then leader.mixed = true end
+
+            if pin.coords < leader.coords
+                or (pin.coords == leader.coords and pin.nodeType < leader.type) then
+                leader.pin:Hide()
+                leader.pin = pin
+                leader.coords = pin.coords
+                leader.type = pin.nodeType
+                leader.x, leader.y = x, y
+            else
+                pin:Hide()
+            end
+
+            if leader.mixed then
+                leader.pin.texture:SetVertexColor(unpack(PULSE_COLOR))
+            else
+                local color = GatherMate.db.profile.trackColors[leader.type]
+                if color then
+                    leader.pin.texture:SetVertexColor(color.Red, color.Green, color.Blue, color.Alpha)
+                end
+            end
+            return
+        end
+    end
+
+    mergeLeaders[#mergeLeaders + 1] = { pin = pin, coords = pin.coords, x = x, y = y, type = pin.nodeType }
 end
 
 local pulseAnim = pulse:CreateAnimationGroup()
@@ -80,14 +160,27 @@ fadeOut:SetDuration(0.8)
 fadeOut:SetOrder(2)
 pulseAnim:SetScript("OnFinished", function() pulse:Hide() end)
 
--- Tint the flash like the tracking circle that triggered it, so the color
--- alone tells the node type; GatherMate2 keeps those colors per type in its
--- profile, the same table its own circles are tinted from.
+-- "rrggbb" to 0-1 rgb; nil for anything that is not 6 hex digits.
+local function parseHexColor(text)
+    if not text or not text:match("^%x%x%x%x%x%x$") then return end
+    return tonumber(text:sub(1, 2), 16) / 255,
+           tonumber(text:sub(3, 4), 16) / 255,
+           tonumber(text:sub(5, 6), 16) / 255
+end
+
+-- A custom hex color wins when set. Otherwise tint the flash like the
+-- tracking circle that triggered it, so the color alone tells the node
+-- type; GatherMate2 keeps those colors per type in its profile, the same
+-- table its own circles are tinted from.
 local function firePulse(nodeType)
-    local colors = GatherMate.db.profile.trackColors
-    local color = nodeType and colors and colors[nodeType]
-    if color then
-        pulseRing:SetVertexColor(color.Red, color.Green, color.Blue)
+    local r, g, b = parseHexColor(db and db.pulseColor)
+    if not r then
+        local colors = GatherMate.db.profile.trackColors
+        local color = nodeType and colors and colors[nodeType]
+        if color then r, g, b = color.Red, color.Green, color.Blue end
+    end
+    if r then
+        pulseRing:SetVertexColor(r, g, b)
     else
         pulseRing:SetVertexColor(unpack(PULSE_COLOR))
     end
@@ -113,6 +206,14 @@ hooksecurefunc(Display, "addMiniPin", function(_, pin)
     if not pin.isCircle then
         if db and db.hideIcons then pin:Hide() end
         return
+    end
+
+    applyCircleSize(pin)
+
+    -- Merge after sizing but before the alert checks, so a hidden
+    -- duplicate still alerts for its own node type.
+    if db and db.mergeCircles then
+        mergeCircle(pin)
     end
 
     -- Skip before touching seen: nodes circled while muted, mid flight,
@@ -211,6 +312,31 @@ local function buildSection(parent, labelText)
     return section
 end
 
+-- 1-10 step slider built like AceGUI's, since the client ships no native
+-- slider template anymore. Label sits to the right of the track.
+local function buildSlider(parent, labelText)
+    local slider = CreateFrame("Slider", nil, parent, "BackdropTemplate")
+    slider:SetOrientation("HORIZONTAL")
+    slider:SetSize(160, 16)
+    slider:SetHitRectInsets(0, 0, -10, 0)
+    slider:SetBackdrop({
+        bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
+        edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
+        tile = true, tileSize = 8, edgeSize = 8,
+        insets = { left = 3, right = 3, top = 6, bottom = 6 },
+    })
+    slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+    slider:SetMinMaxValues(1, 10)
+    slider:SetValueStep(1)
+    slider:SetObeyStepOnDrag(true)
+
+    local label = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", slider, "RIGHT", HELPER_GAP, 0)
+    label:SetText(labelText)
+
+    return slider
+end
+
 -- UICheckButtonTemplate exposes a .Text region on most clients but not all;
 -- fall back to a manual label so both cases render identically.
 local function setCheckboxLabel(checkButton, text)
@@ -272,7 +398,8 @@ local function buildPanel()
     end
 
     -- Alert
-    local alertContentH = CB_H + ROW_GAP + CB_H + HELPER_GAP + 16 + HELPER_GAP + ROW_H + ROW_GAP + CB_H
+    local alertContentH = CB_H + ROW_GAP + CB_H + HELPER_GAP + 16 + HELPER_GAP + ROW_H
+                          + HELPER_GAP + ROW_H + ROW_GAP + CB_H
     local alertSection, alertContainer = makeContentSection(
         "Alert",
         "Plays when a trackable node comes within tracking range of the minimap.",
@@ -288,22 +415,8 @@ local function buildPanel()
     pulseCheck:SetPoint("TOPLEFT", soundCheck, "BOTTOMLEFT", 0, -ROW_GAP)
     setCheckboxLabel(pulseCheck, "Flash the minimap edge")
 
-    -- Ring thickness, built like AceGUI's slider since the client ships no
-    -- native slider template anymore. Releasing the thumb previews the flash.
-    local thicknessSlider = CreateFrame("Slider", nil, alertContainer, "BackdropTemplate")
-    thicknessSlider:SetOrientation("HORIZONTAL")
-    thicknessSlider:SetSize(160, 16)
-    thicknessSlider:SetHitRectInsets(0, 0, -10, 0)
-    thicknessSlider:SetBackdrop({
-        bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
-        edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = { left = 3, right = 3, top = 6, bottom = 6 },
-    })
-    thicknessSlider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-    thicknessSlider:SetMinMaxValues(1, 8)
-    thicknessSlider:SetValueStep(1)
-    thicknessSlider:SetObeyStepOnDrag(true)
+    -- Releasing the thumb previews the flash at the chosen thickness.
+    local thicknessSlider = buildSlider(alertContainer, "Flash thickness")
     thicknessSlider:SetPoint("TOPLEFT", pulseCheck, "BOTTOMLEFT", 4, -HELPER_GAP)
     thicknessSlider:SetScript("OnValueChanged", function(_, value)
         value = math.floor(value + 0.5)
@@ -314,14 +427,39 @@ local function buildPanel()
     end)
     thicknessSlider:SetScript("OnMouseUp", function() firePulse() end)
 
-    local thicknessLabel = alertContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    thicknessLabel:SetPoint("LEFT", thicknessSlider, "RIGHT", HELPER_GAP, 0)
-    thicknessLabel:SetText("Flash thickness")
+    -- Optional fixed flash color as hex; an empty box keeps the automatic
+    -- node-type tint. Committing a change previews the flash, invalid
+    -- input snaps back to the stored value. InputBoxTemplate's art juts
+    -- ~5px left of the frame, hence the offset dance around it.
+    local colorInput = CreateFrame("EditBox", nil, alertContainer, "InputBoxTemplate")
+    colorInput:SetSize(70, ROW_H)
+    colorInput:SetPoint("TOPLEFT", thicknessSlider, "BOTTOMLEFT", 5, -HELPER_GAP)
+    colorInput:SetAutoFocus(false)
+    colorInput:SetMaxLetters(7)
+    colorInput:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    colorInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    colorInput:SetScript("OnEditFocusLost", function(self)
+        self:HighlightText(0, 0)
+
+        local text = self:GetText():gsub("#", ""):lower()
+        local previous = db.pulseColor
+        if text == "" then
+            db.pulseColor = nil
+        elseif parseHexColor(text) then
+            db.pulseColor = text
+        end
+        self:SetText(db.pulseColor or "")
+        if db.pulseColor ~= previous then firePulse() end
+    end)
+
+    local colorLabel = alertContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    colorLabel:SetPoint("LEFT", colorInput, "RIGHT", HELPER_GAP, 0)
+    colorLabel:SetText("Flash color hex (empty = node color)")
 
     -- Named-sound picker. Choosing a sound saves it and plays it once as a preview.
     local soundDropdown = CreateFrame("DropdownButton", nil, alertContainer, "WowStyle1DropdownTemplate")
     soundDropdown:SetSize(160, ROW_H)
-    soundDropdown:SetPoint("TOPLEFT", thicknessSlider, "BOTTOMLEFT", -4, -HELPER_GAP)
+    soundDropdown:SetPoint("TOPLEFT", colorInput, "BOTTOMLEFT", -9, -HELPER_GAP)
     soundDropdown:SetDefaultText("Choose a sound")
     soundDropdown:SetupMenu(function(_, root)
         for _, preset in ipairs(SOUND_PRESETS) do
@@ -375,7 +513,7 @@ local function buildPanel()
     local minimapSection, minimapContainer = makeContentSection(
         "Minimap",
         "Tracking circles for nearby nodes stay visible either way, so the alert keeps working.",
-        CB_H, cooldownSection)
+        CB_H + ROW_GAP + CB_H + HELPER_GAP + 16, cooldownSection)
 
     local hideIconsCheck = CreateFrame("CheckButton", nil, minimapContainer, "UICheckButtonTemplate")
     hideIconsCheck:SetSize(CB_H, CB_H)
@@ -386,6 +524,27 @@ local function buildPanel()
 
         -- Rebuild the minimap pins so the change applies without moving.
         Display:UpdateMaps()
+    end)
+
+    local mergeCheck = CreateFrame("CheckButton", nil, minimapContainer, "UICheckButtonTemplate")
+    mergeCheck:SetSize(CB_H, CB_H)
+    mergeCheck:SetPoint("TOPLEFT", hideIconsCheck, "BOTTOMLEFT", 0, -ROW_GAP)
+    setCheckboxLabel(mergeCheck, "Merge stacked circles into one")
+    mergeCheck:SetScript("OnClick", function(self)
+        db.mergeCircles = self:GetChecked() and true or false
+        Display:UpdateMaps()
+    end)
+
+    local circleSlider = buildSlider(minimapContainer, "Circle size")
+    circleSlider:SetPoint("TOPLEFT", mergeCheck, "BOTTOMLEFT", 4, -HELPER_GAP)
+    circleSlider:SetScript("OnValueChanged", function(_, value)
+        value = math.floor(value + 0.5)
+        if value ~= db.circleSize then
+            db.circleSize = value
+
+            -- Rebuild the minimap pins so the new size applies without moving.
+            Display:UpdateMaps()
+        end
     end)
 
     -- Node Types
@@ -479,8 +638,11 @@ local function buildPanel()
         soundCheck:SetChecked(db.enabled)
         pulseCheck:SetChecked(db.pulse)
         thicknessSlider:SetValue(db.pulseThickness)
+        colorInput:SetText(db.pulseColor or "")
         channelCheck:SetChecked(db.channel == "Master")
         hideIconsCheck:SetChecked(db.hideIcons)
+        mergeCheck:SetChecked(db.mergeCircles)
+        circleSlider:SetValue(db.circleSize)
         for nodeType, cb in pairs(typeChecks) do
             cb:SetChecked(not db.mutedTypes[nodeType])
         end
@@ -572,12 +734,14 @@ events:SetScript("OnEvent", function(_, event, addonName)
             if db.enabled == nil then db.enabled = true end
             if db.pulse == nil then db.pulse = true end
             if db.hideIcons == nil then db.hideIcons = false end
+            if db.mergeCircles == nil then db.mergeCircles = true end
             db.minimap = db.minimap or {}
             db.cooldown = db.cooldown or 10
             db.channel = db.channel or "SFX"
             db.mutedTypes = db.mutedTypes or {}
 
             db.pulseThickness = db.pulseThickness or 4
+            db.circleSize = db.circleSize or 1
 
             -- Older versions stored a SOUNDKIT key string in db.sound.
             db.soundId = db.soundId or (db.sound and SOUNDKIT[db.sound]) or DEFAULT_SOUND_ID
