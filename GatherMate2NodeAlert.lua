@@ -107,9 +107,13 @@ end
 -- Display:addMiniPin turns a pin into the tracking circle once the node is
 -- within GatherMate2's track distance. Ping on that transition only; far
 -- icon pins at the minimap edge stay silent. The hook runs every frame per
--- pin, so bail out cheaply for everything that is not a circle.
+-- pin, so bail out cheaply for everything that is not a circle. It also
+-- runs right after addMiniPin's own Show, so hiding icon pins here wins.
 hooksecurefunc(Display, "addMiniPin", function(_, pin)
-    if not pin.isCircle then return end
+    if not pin.isCircle then
+        if db and db.hideIcons then pin:Hide() end
+        return
+    end
 
     -- Skip before touching seen: nodes circled while muted, mid flight,
     -- or mid fight should still alert once pings are possible again.
@@ -367,6 +371,23 @@ local function buildPanel()
         end
     end)
 
+    -- Minimap
+    local minimapSection, minimapContainer = makeContentSection(
+        "Minimap",
+        "Tracking circles for nearby nodes stay visible either way, so the alert keeps working.",
+        CB_H, cooldownSection)
+
+    local hideIconsCheck = CreateFrame("CheckButton", nil, minimapContainer, "UICheckButtonTemplate")
+    hideIconsCheck:SetSize(CB_H, CB_H)
+    hideIconsCheck:SetPoint("TOPLEFT", minimapContainer, "TOPLEFT", 0, 0)
+    setCheckboxLabel(hideIconsCheck, "Hide node icons")
+    hideIconsCheck:SetScript("OnClick", function(self)
+        db.hideIcons = self:GetChecked() and true or false
+
+        -- Rebuild the minimap pins so the change applies without moving.
+        Display:UpdateMaps()
+    end)
+
     -- Node Types
     local nodeTypes = {}
     for _, nodeType in pairs(GatherMate.db_types) do
@@ -378,7 +399,7 @@ local function buildPanel()
     local typesSection, typesContainer = makeContentSection(
         "Node Types",
         "Only checked types trigger an alert.",
-        typesContentH, cooldownSection)
+        typesContentH, minimapSection)
 
     local typeChecks = {}
     local anchor
@@ -443,10 +464,12 @@ local function buildPanel()
     local function resizePanel()
         sizeContentSection(alertSection)
         sizeContentSection(cooldownSection)
+        sizeContentSection(minimapSection)
         sizeContentSection(typesSection)
 
         local sectionsH = alertSection:GetHeight() + SECTION_GAP +
                           cooldownSection:GetHeight() + SECTION_GAP +
+                          minimapSection:GetHeight() + SECTION_GAP +
                           typesSection:GetHeight()
         local footerH = SECTION_GAP + ROW_H + PAD
         f:SetHeight(PAD_TOP + sectionsH + footerH)
@@ -457,6 +480,7 @@ local function buildPanel()
         pulseCheck:SetChecked(db.pulse)
         thicknessSlider:SetValue(db.pulseThickness)
         channelCheck:SetChecked(db.channel == "Master")
+        hideIconsCheck:SetChecked(db.hideIcons)
         for nodeType, cb in pairs(typeChecks) do
             cb:SetChecked(not db.mutedTypes[nodeType])
         end
@@ -547,6 +571,7 @@ events:SetScript("OnEvent", function(_, event, addonName)
             db = GatherMate2NodeAlertDB
             if db.enabled == nil then db.enabled = true end
             if db.pulse == nil then db.pulse = true end
+            if db.hideIcons == nil then db.hideIcons = false end
             db.minimap = db.minimap or {}
             db.cooldown = db.cooldown or 10
             db.channel = db.channel or "SFX"
