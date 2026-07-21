@@ -87,7 +87,7 @@ end
 -- that overlap on screen must merge by pin distance, not by coordinate.
 -- GatherMate2 positions every pin through addMiniPin within a single
 -- frame, so the frame time works as the batch marker: circles whose
--- centers fall within one circle-width of each other form a cluster and
+-- centers fall within one default circle-width of each other form a cluster and
 -- only its leader stays visible. Leadership goes to the lowest node
 -- coordinate, never to whichever pin arrived first: GatherMate2's full
 -- sweeps and its per-move updates iterate pins in different orders, and
@@ -114,7 +114,10 @@ local function mergeCircle(pin)
     -- A single-type cluster keeps that type's own circle color and only
     -- grows; gold marks a cluster that mixes node types. Repainting the
     -- type color also heals a leader that was gold a frame earlier.
-    local reach = circleSize()
+    -- Reach stays at GatherMate2's native 10px circle footprint no matter
+    -- the size slider: a scaled-up reach merged nodes that never merged at
+    -- default size, moving the visible circle off the node it encircles.
+    local reach = 10 / Minimap:GetScale()
     for _, leader in ipairs(mergeLeaders) do
         if leader.pin == pin then return end
         local dx, dy = x - leader.x, y - leader.y
@@ -160,25 +163,14 @@ fadeOut:SetDuration(0.8)
 fadeOut:SetOrder(2)
 pulseAnim:SetScript("OnFinished", function() pulse:Hide() end)
 
--- "rrggbb" to 0-1 rgb; nil for anything that is not 6 hex digits.
-local function parseHexColor(text)
-    if not text or not text:match("^%x%x%x%x%x%x$") then return end
-    return tonumber(text:sub(1, 2), 16) / 255,
-           tonumber(text:sub(3, 4), 16) / 255,
-           tonumber(text:sub(5, 6), 16) / 255
-end
-
--- A custom hex color wins when set. Otherwise tint the flash like the
--- tracking circle that triggered it, so the color alone tells the node
--- type; GatherMate2 keeps those colors per type in its profile, the same
--- table its own circles are tinted from.
+-- Tint the flash like the tracking circle that triggered it, so the color
+-- alone tells the node type; GatherMate2 keeps those colors per type in
+-- its profile, the same table its own circles are tinted from.
 local function firePulse(nodeType)
-    local r, g, b = parseHexColor(db and db.pulseColor)
-    if not r then
-        local colors = GatherMate.db.profile.trackColors
-        local color = nodeType and colors and colors[nodeType]
-        if color then r, g, b = color.Red, color.Green, color.Blue end
-    end
+    local r, g, b
+    local colors = GatherMate.db.profile.trackColors
+    local color = nodeType and colors and colors[nodeType]
+    if color then r, g, b = color.Red, color.Green, color.Blue end
     if r then
         pulseRing:SetVertexColor(r, g, b)
     else
@@ -398,7 +390,7 @@ local function buildPanel()
     end
 
     -- Alert
-    local alertContentH = CB_H + ROW_GAP + CB_H + HELPER_GAP + 16 + HELPER_GAP + ROW_H
+    local alertContentH = CB_H + ROW_GAP + CB_H + HELPER_GAP + 16
                           + HELPER_GAP + ROW_H + ROW_GAP + CB_H
     local alertSection, alertContainer = makeContentSection(
         "Alert",
@@ -427,39 +419,10 @@ local function buildPanel()
     end)
     thicknessSlider:SetScript("OnMouseUp", function() firePulse() end)
 
-    -- Optional fixed flash color as hex; an empty box keeps the automatic
-    -- node-type tint. Committing a change previews the flash, invalid
-    -- input snaps back to the stored value. InputBoxTemplate's art juts
-    -- ~5px left of the frame, hence the offset dance around it.
-    local colorInput = CreateFrame("EditBox", nil, alertContainer, "InputBoxTemplate")
-    colorInput:SetSize(70, ROW_H)
-    colorInput:SetPoint("TOPLEFT", thicknessSlider, "BOTTOMLEFT", 5, -HELPER_GAP)
-    colorInput:SetAutoFocus(false)
-    colorInput:SetMaxLetters(7)
-    colorInput:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    colorInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    colorInput:SetScript("OnEditFocusLost", function(self)
-        self:HighlightText(0, 0)
-
-        local text = self:GetText():gsub("#", ""):lower()
-        local previous = db.pulseColor
-        if text == "" then
-            db.pulseColor = nil
-        elseif parseHexColor(text) then
-            db.pulseColor = text
-        end
-        self:SetText(db.pulseColor or "")
-        if db.pulseColor ~= previous then firePulse() end
-    end)
-
-    local colorLabel = alertContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    colorLabel:SetPoint("LEFT", colorInput, "RIGHT", HELPER_GAP, 0)
-    colorLabel:SetText("Flash color hex (empty = node color)")
-
     -- Named-sound picker. Choosing a sound saves it and plays it once as a preview.
     local soundDropdown = CreateFrame("DropdownButton", nil, alertContainer, "WowStyle1DropdownTemplate")
     soundDropdown:SetSize(160, ROW_H)
-    soundDropdown:SetPoint("TOPLEFT", colorInput, "BOTTOMLEFT", -9, -HELPER_GAP)
+    soundDropdown:SetPoint("TOPLEFT", thicknessSlider, "BOTTOMLEFT", -4, -HELPER_GAP)
     soundDropdown:SetDefaultText("Choose a sound")
     soundDropdown:SetupMenu(function(_, root)
         for _, preset in ipairs(SOUND_PRESETS) do
@@ -638,7 +601,6 @@ local function buildPanel()
         soundCheck:SetChecked(db.enabled)
         pulseCheck:SetChecked(db.pulse)
         thicknessSlider:SetValue(db.pulseThickness)
-        colorInput:SetText(db.pulseColor or "")
         channelCheck:SetChecked(db.channel == "Master")
         hideIconsCheck:SetChecked(db.hideIcons)
         mergeCheck:SetChecked(db.mergeCircles)
@@ -743,9 +705,11 @@ events:SetScript("OnEvent", function(_, event, addonName)
             db.pulseThickness = db.pulseThickness or 4
             db.circleSize = db.circleSize or 1
 
-            -- Older versions stored a SOUNDKIT key string in db.sound.
+            -- Older versions stored a SOUNDKIT key string in db.sound and
+            -- an optional custom flash color in db.pulseColor.
             db.soundId = db.soundId or (db.sound and SOUNDKIT[db.sound]) or DEFAULT_SOUND_ID
             db.sound = nil
+            db.pulseColor = nil
 
             applyThickness()
         end
