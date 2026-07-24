@@ -58,8 +58,7 @@ pulseRing:SetAllPoints(pulse)
 pulseRing:SetTexture(PULSE_TEXTURE)
 pulseRing:SetVertexColor(unpack(PULSE_COLOR))
 
--- The texture is a 4x4 atlas holding 10 rings from hairline to bold; the
--- slider index picks a cell, runtime drawing is not possible in the client.
+-- The texture is a 4x4 atlas holding 10 rings from hairline to bold; the slider index picks a cell, runtime drawing is not possible in the client.
 local function applyThickness()
     local index = (db and db.pulseThickness or 4) - 1
     local col = index % 4
@@ -67,11 +66,7 @@ local function applyThickness()
     pulseRing:SetTexCoord(col * 0.25, (col + 1) * 0.25, row * 0.25, (row + 1) * 0.25)
 end
 
--- GatherMate2 sizes tracking circles once, at 10 / Minimap:GetScale(), when
--- a pin turns into a circle (Display.lua); resize right after in the
--- addMiniPin hook so the slider choice sticks. Slider step 1 keeps the
--- native 10px, each step adds 2px. Skip when already sized, the hook runs
--- per pin on every map update.
+-- GatherMate2 sizes tracking circles once, at 10 / Minimap:GetScale(), when a pin turns into a circle (Display.lua); resize right after in the addMiniPin hook so the slider choice sticks. Slider step 1 keeps the native 10px, each step adds 2px. Skip when already sized, the hook runs per pin on every map update.
 local function circleSize()
     return (8 + 2 * (db and db.circleSize or 1)) / Minimap:GetScale()
 end
@@ -83,24 +78,12 @@ local function applyCircleSize(pin)
     end
 end
 
--- Nearby nodes are separate spawns with distinct coordinates, so circles
--- that overlap on screen must merge by pin distance, not by coordinate.
--- GatherMate2 positions every pin through addMiniPin within a single
--- frame, so the frame time works as the batch marker: circles whose
--- centers fall within one default circle-width of each other form a cluster and
--- only its leader stays visible. Leadership goes to the lowest node
--- coordinate, never to whichever pin arrived first: GatherMate2's full
--- sweeps and its per-move updates iterate pins in different orders, and
--- first-come leadership made the visible circle hop between cluster
--- members instead of staying concentric with one real node. Full sweeps
--- re-show all pins at least every two seconds, which heals any stale
--- state after pins leave range or get recycled.
+-- Nearby nodes are separate spawns with distinct coordinates, so circles that overlap on screen must merge by pin distance, not by coordinate. GatherMate2 positions every pin through addMiniPin within a single frame, so the frame time works as the batch marker: circles whose centers fall within one default circle-width of each other form a cluster and only its leader stays visible. Leadership goes to the lowest node coordinate, never to whichever pin arrived first: GatherMate2's full sweeps and its per-move updates iterate pins in different orders, and first-come leadership made the visible circle hop between cluster members instead of staying concentric with one real node. Full sweeps re-show all pins at least every two seconds, which heals any stale state after pins leave range or get recycled.
 local mergeStamp = 0
 local mergeLeaders = {}
 
 local function mergeCircle(pin)
-    -- GatherMate2 skips positioning when it hides an edge-faded pin, so
-    -- a hidden pin has a stale point and must not lead or merge.
+    -- GatherMate2 skips positioning when it hides an edge-faded pin, so a hidden pin has a stale point and must not lead or merge.
     if not pin:IsShown() then return end
     local _, _, _, x, y = pin:GetPoint(1)
     if not x then return end
@@ -111,12 +94,7 @@ local function mergeCircle(pin)
         wipe(mergeLeaders)
     end
 
-    -- A single-type cluster keeps that type's own circle color and only
-    -- grows; gold marks a cluster that mixes node types. Repainting the
-    -- type color also heals a leader that was gold a frame earlier.
-    -- Reach stays at GatherMate2's native 10px circle footprint no matter
-    -- the size slider: a scaled-up reach merged nodes that never merged at
-    -- default size, moving the visible circle off the node it encircles.
+    -- A single-type cluster keeps that type's own circle color and only grows; gold marks a cluster that mixes node types. Repainting the type color also heals a leader that was gold a frame earlier. Reach stays at GatherMate2's native 10px circle footprint no matter the size slider: a scaled-up reach merged nodes that never merged at default size, moving the visible circle off the node it encircles.
     local reach = 10 / Minimap:GetScale()
     for _, leader in ipairs(mergeLeaders) do
         if leader.pin == pin then return end
@@ -163,9 +141,7 @@ fadeOut:SetDuration(0.8)
 fadeOut:SetOrder(2)
 pulseAnim:SetScript("OnFinished", function() pulse:Hide() end)
 
--- Tint the flash like the tracking circle that triggered it, so the color
--- alone tells the node type; GatherMate2 keeps those colors per type in
--- its profile, the same table its own circles are tinted from.
+-- Tint the flash like the tracking circle that triggered it, so the color alone tells the node type; GatherMate2 keeps those colors per type in its profile, the same table its own circles are tinted from.
 local function firePulse(nodeType)
     local r, g, b
     local colors = GatherMate.db.profile.trackColors
@@ -189,11 +165,7 @@ local function ping(nodeType)
     end
 end
 
--- Display:addMiniPin turns a pin into the tracking circle once the node is
--- within GatherMate2's track distance. Ping on that transition only; far
--- icon pins at the minimap edge stay silent. The hook runs every frame per
--- pin, so bail out cheaply for everything that is not a circle. It also
--- runs right after addMiniPin's own Show, so hiding icon pins here wins.
+-- Display:addMiniPin turns a pin into the tracking circle once the node is within GatherMate2's track distance. Ping on that transition only; far icon pins at the minimap edge stay silent. The hook runs every frame per pin, so bail out cheaply for everything that is not a circle. It also runs right after addMiniPin's own Show, so hiding icon pins here wins.
 hooksecurefunc(Display, "addMiniPin", function(_, pin)
     if not pin.isCircle then
         if db and db.hideIcons then pin:Hide() end
@@ -202,14 +174,12 @@ hooksecurefunc(Display, "addMiniPin", function(_, pin)
 
     applyCircleSize(pin)
 
-    -- Merge after sizing but before the alert checks, so a hidden
-    -- duplicate still alerts for its own node type.
+    -- Merge after sizing but before the alert checks, so a hidden duplicate still alerts for its own node type.
     if db and db.mergeCircles then
         mergeCircle(pin)
     end
 
-    -- Skip before touching seen: nodes circled while muted, mid flight,
-    -- or mid fight should still alert once pings are possible again.
+    -- Skip before touching seen: nodes circled while muted, mid flight, or mid fight should still alert once pings are possible again.
     if not (db and (db.enabled or db.pulse)) then return end
     if db.mutedTypes[pin.nodeType] then return end
     if UnitOnTaxi("player") or InCombatLockdown() then return end
@@ -231,9 +201,7 @@ hooksecurefunc(Display, "addMiniPin", function(_, pin)
     ping(pin.nodeType)
 end)
 
----------------------------------------------------------
 -- Settings panel, built from ChatScan's dialog patterns.
-
 -- Native Blizzard dialog backdrop (same art AceGUI's Frame / ChatScan use).
 local function applyPanelBackdrop(frame)
     frame:SetBackdrop({
@@ -246,8 +214,7 @@ local function applyPanelBackdrop(frame)
     })
 end
 
--- Blizzard dialog-box header banner from three pieces (left cap, middle,
--- right cap); texcoords match ChatScan's title.
+-- Blizzard dialog-box header banner from three pieces (left cap, middle, right cap); texcoords match ChatScan's title.
 local function buildTitleHeader(parent, text)
     local HEADER_TEXTURE = "Interface\\DialogFrame\\UI-DialogBox-Header"
 
@@ -304,8 +271,7 @@ local function buildSection(parent, labelText)
     return section
 end
 
--- 1-10 step slider built like AceGUI's, since the client ships no native
--- slider template anymore. Label sits to the right of the track.
+-- 1-10 step slider built like AceGUI's, since the client ships no native slider template anymore. Label sits to the right of the track.
 local function buildSlider(parent, labelText)
     local slider = CreateFrame("Slider", nil, parent, "BackdropTemplate")
     slider:SetOrientation("HORIZONTAL")
@@ -329,8 +295,7 @@ local function buildSlider(parent, labelText)
     return slider
 end
 
--- UICheckButtonTemplate exposes a .Text region on most clients but not all;
--- fall back to a manual label so both cases render identically.
+-- UICheckButtonTemplate exposes a .Text region on most clients but not all; fall back to a manual label so both cases render identically.
 local function setCheckboxLabel(checkButton, text)
     if checkButton.Text then
         checkButton.Text:SetText(text)
@@ -360,8 +325,7 @@ local function buildPanel()
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -2, -2)
 
-    -- Section box with a wrapped helper line at the top and a content
-    -- container below it, sized later by resizePanel.
+    -- Section box with a wrapped helper line at the top and a content container below it, sized later by resizePanel.
     local function makeContentSection(label, helperText, contentH, prevSection)
         local section = buildSection(f, label)
         if prevSection then
@@ -391,7 +355,7 @@ local function buildPanel()
 
     -- Alert
     local alertContentH = CB_H + ROW_GAP + CB_H + HELPER_GAP + 16
-                          + HELPER_GAP + ROW_H + ROW_GAP + CB_H
+        + HELPER_GAP + ROW_H + ROW_GAP + CB_H
     local alertSection, alertContainer = makeContentSection(
         "Alert",
         "Plays when a trackable node comes within tracking range of the minimap.",
@@ -590,9 +554,9 @@ local function buildPanel()
         sizeContentSection(typesSection)
 
         local sectionsH = alertSection:GetHeight() + SECTION_GAP +
-                          cooldownSection:GetHeight() + SECTION_GAP +
-                          minimapSection:GetHeight() + SECTION_GAP +
-                          typesSection:GetHeight()
+            cooldownSection:GetHeight() + SECTION_GAP +
+            minimapSection:GetHeight() + SECTION_GAP +
+            typesSection:GetHeight()
         local footerH = SECTION_GAP + ROW_H + PAD
         f:SetHeight(PAD_TOP + sectionsH + footerH)
     end
@@ -624,9 +588,7 @@ local function togglePanel()
     if panel:IsShown() then panel:Hide() else panel:Show() end
 end
 
----------------------------------------------------------
 -- Minimap button
-
 local function renderTooltip(tooltip)
     tooltip:AddLine("GatherMate2NodeAlert")
     tooltip:AddLine((db.enabled or db.pulse) and "Alert is on." or "Alert is off.", 1, 1, 1)
@@ -653,13 +615,12 @@ local function toggleAlert()
     db.enabled = turnOn
     db.pulse = turnOn
     PlaySound(turnOn and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
-                     or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
     updateButton()
     if panel and panel:IsShown() then panel:GetScript("OnShow")(panel) end
 end
 
--- Libs come embedded in other addons, so register the button once every
--- addon has loaded.
+-- Libs come embedded in other addons, so register the button once every addon has loaded.
 local function setupMinimapButton()
     local ldb = LibStub("LibDataBroker-1.1", true)
     local dbicon = LibStub("LibDBIcon-1.0", true)
@@ -705,8 +666,7 @@ events:SetScript("OnEvent", function(_, event, addonName)
             db.pulseThickness = db.pulseThickness or 4
             db.circleSize = db.circleSize or 1
 
-            -- Older versions stored a SOUNDKIT key string in db.sound and
-            -- an optional custom flash color in db.pulseColor.
+            -- Older versions stored a SOUNDKIT key string in db.sound and an optional custom flash color in db.pulseColor.
             db.soundId = db.soundId or (db.sound and SOUNDKIT[db.sound]) or DEFAULT_SOUND_ID
             db.sound = nil
             db.pulseColor = nil
