@@ -2,7 +2,7 @@ local ADDON_NAME = "GatherMate2NodeAlert"
 
 local REAPPEAR_AFTER = 180
 local ZONING_QUIET_TIME = 5
-local BUTTON_ICON = "Interface\\AddOns\\GatherMate2\\Artwork\\Icon"
+local BUTTON_ICON = "Interface\\Icons\\INV_Misc_Bell_01"
 local PULSE_TEXTURE = "Interface\\AddOns\\GatherMate2NodeAlert\\pulse_ring"
 local PULSE_COLOR = { 1, 0.82, 0 }
 local DEFAULT_SOUND_ID = 3175  -- SOUNDKIT.MAP_PING (minimap ping)
