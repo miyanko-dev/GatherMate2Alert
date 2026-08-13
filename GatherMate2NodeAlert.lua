@@ -20,16 +20,19 @@ local SOUND_PRESETS = {
 
 local COOLDOWNS = { 1, 3, 5, 10, 20, 30 }
 
--- Layout spacing, mirrored from ChatScan so both addons share one look.
+-- Layout spacing, mirrored from ChatScan so both addons share one look. All gaps use the 4/8/16 increment system (24 = 16 + 8).
 local PAD = 16                  -- outer panel padding (sides + bottom)
 local PAD_TOP = 48              -- clears the dialog-box-header banner
-local SECTION_GAP = 24          -- vertical space between two section boxes
-local SECTION_INNER_PAD = 8     -- inset between section border and body
-local SECTION_LABEL_LIFT = 7    -- header banner overlap; visual-only
-local HELPER_GAP = 8            -- space below a section's helper text
+local SECTION_GAP = 24          -- between section boxes; clears the floating label
+local SECTION_INNER_PAD = 12    -- inset between section border and content (8 + 4); clears the border art
+local SECTION_LABEL_LIFT = 8    -- floating label bottom above the box top edge
+local HELPER_GAP = 8            -- helper text -> section content
+local BTN_GAP = 8               -- horizontal gap between sibling widgets
 local ROW_H = 24                -- height of an interactive row (input/button)
 local ROW_GAP = 4               -- vertical space between row siblings
 local CB_H = 20                 -- native UICheckButton size
+local SLIDER_H = 40             -- MinimalSliderWithSteppersTemplate frame height
+local SLIDER_W = 160            -- slider width, matches the dropdown column
 
 local GatherMate = LibStub("AceAddon-3.0"):GetAddon("GatherMate2")
 local Display = GatherMate:GetModule("Display")
@@ -245,66 +248,35 @@ local function buildTitleHeader(parent, text)
     mid:SetWidth((title:GetStringWidth() or 0) + 10)
 end
 
--- Nested section box (matches AceGUI InlineGroup): flat dark bg + tooltip border.
-local function buildSection(parent, labelText)
-    local section = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    section:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 16,
-        insets = { left = 3, right = 3, top = 5, bottom = 3 },
-    })
-    section:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
-    section:SetBackdropBorderColor(0.4, 0.4, 0.4)
-
-    local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("BOTTOMLEFT", section, "TOPLEFT", 12, SECTION_LABEL_LIFT)
-    label:SetText(labelText)
-
-    local body = CreateFrame("Frame", nil, section)
-    body:SetPoint("TOPLEFT", section, "TOPLEFT", SECTION_INNER_PAD, -SECTION_INNER_PAD)
-    body:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", -SECTION_INNER_PAD, SECTION_INNER_PAD)
-    section.body = body
-
-    return section
-end
-
--- 1-10 step slider built like AceGUI's, since the client ships no native slider template anymore. Label sits to the right of the track.
-local function buildSlider(parent, labelText)
-    local slider = CreateFrame("Slider", nil, parent, "BackdropTemplate")
-    slider:SetOrientation("HORIZONTAL")
-    slider:SetSize(160, 16)
-    slider:SetHitRectInsets(0, 0, -10, 0)
-    slider:SetBackdrop({
-        bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
-        edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = { left = 3, right = 3, top = 6, bottom = 6 },
-    })
-    slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-    slider:SetMinMaxValues(1, 10)
-    slider:SetValueStep(1)
-    slider:SetObeyStepOnDrag(true)
-
-    local label = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    label:SetPoint("LEFT", slider, "RIGHT", HELPER_GAP, 0)
-    label:SetText(labelText)
-
+-- Native Settings-panel slider (MinimalSliderWithSteppersTemplate): top label, track with -/+ steppers, min/max labels. The frame is 40px tall; width flows from the caller's anchors. Same widget QuestieGuide uses for its level range.
+local sliderCounter = 0
+local function buildStepSlider(parent, labelPrefix, getValue, setValue)
+    sliderCounter = sliderCounter + 1
+    local slider = CreateFrame("Frame", "GatherMate2NodeAlertSlider" .. sliderCounter,
+        parent, "MinimalSliderWithSteppersTemplate")
+    local Label = MinimalSliderWithSteppersMixin.Label
+    local formatters = {
+        [Label.Top] = function(v) return labelPrefix .. ": " .. v end,
+        [Label.Min] = function() return "1" end,
+        [Label.Max] = function() return "10" end,
+    }
+    slider:Init(getValue(), 1, 10, 9, formatters)
+    slider:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, value)
+        setValue(math.floor(value + 0.5))
+    end, slider)
     return slider
 end
 
--- UICheckButtonTemplate exposes a .Text region on most clients but not all; fall back to a manual label so both cases render identically.
+-- UICheckButtonTemplate exposes a .Text region on most clients but not all; fall back to a manual label so both cases render identically. The template anchors its label for the 32px default checkbox, so re-anchor with an explicit 4px gap for the 20px size (same as QuestieGuide).
 local function setCheckboxLabel(checkButton, text)
-    if checkButton.Text then
-        checkButton.Text:SetText(text)
-        checkButton.Text:SetFontObject(GameFontHighlightSmall)
-    else
-        local label = checkButton:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        label:SetPoint("LEFT", checkButton, "RIGHT", 2, 0)
-        label:SetText(text)
+    local label = checkButton.Text
+    if not label then
+        label = checkButton:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     end
+    label:SetFontObject(GameFontHighlightSmall)
+    label:SetText(text)
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", checkButton, "RIGHT", 4, 0)
 end
 
 local function buildPanel()
@@ -323,11 +295,21 @@ local function buildPanel()
     buildTitleHeader(f, "Node Alert")
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -2, -2)
+    close:SetPoint("TOPRIGHT", -4, -4)
 
-    -- Section box with a wrapped helper line at the top and a content container below it, sized later by resizePanel.
+    -- Boxed subcontainer (AceGUI InlineGroup look): dark bg + tooltip border with a floating yellow label above the box, grey wrapped helper at the content top, content container 8px below the helper.
     local function makeContentSection(label, helperText, contentH, prevSection)
-        local section = buildSection(f, label)
+        local section = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        section:SetBackdrop({
+            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 3, right = 3, top = 5, bottom = 3 },
+        })
+        section:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+        section:SetBackdropBorderColor(0.4, 0.4, 0.4)
         if prevSection then
             section:SetPoint("TOPLEFT", prevSection, "BOTTOMLEFT", 0, -SECTION_GAP)
             section:SetPoint("TOPRIGHT", prevSection, "BOTTOMRIGHT", 0, -SECTION_GAP)
@@ -336,16 +318,20 @@ local function buildPanel()
             section:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD, -PAD_TOP)
         end
 
-        local helper = section.body:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        helper:SetPoint("TOPLEFT", section.body, "TOPLEFT", 0, 0)
-        helper:SetPoint("RIGHT", section.body, "RIGHT", 0, 0)
+        local header = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        header:SetPoint("BOTTOMLEFT", section, "TOPLEFT", SECTION_INNER_PAD, SECTION_LABEL_LIFT)
+        header:SetText(label)
+
+        local helper = section:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        helper:SetPoint("TOPLEFT", section, "TOPLEFT", SECTION_INNER_PAD, -SECTION_INNER_PAD)
+        helper:SetPoint("RIGHT", section, "RIGHT", -SECTION_INNER_PAD, 0)
         helper:SetJustifyH("LEFT")
         helper:SetWordWrap(true)
         helper:SetText(helperText)
 
-        local container = CreateFrame("Frame", nil, section.body)
+        local container = CreateFrame("Frame", nil, section)
         container:SetPoint("TOPLEFT", helper, "BOTTOMLEFT", 0, -HELPER_GAP)
-        container:SetPoint("RIGHT", section.body, "RIGHT", 0, 0)
+        container:SetPoint("RIGHT", section, "RIGHT", -SECTION_INNER_PAD, 0)
         container:SetHeight(contentH)
 
         section.helper = helper
@@ -354,8 +340,8 @@ local function buildPanel()
     end
 
     -- Alert
-    local alertContentH = CB_H + ROW_GAP + CB_H + HELPER_GAP + 16
-        + HELPER_GAP + ROW_H + ROW_GAP + CB_H
+    local alertContentH = CB_H + ROW_GAP + CB_H + BTN_GAP + SLIDER_H
+        + BTN_GAP + ROW_H + ROW_GAP + CB_H
     local alertSection, alertContainer = makeContentSection(
         "Alert",
         "Plays when a trackable node comes within tracking range of the minimap.",
@@ -372,21 +358,22 @@ local function buildPanel()
     setCheckboxLabel(pulseCheck, "Flash the minimap edge")
 
     -- Releasing the thumb previews the flash at the chosen thickness.
-    local thicknessSlider = buildSlider(alertContainer, "Flash thickness")
-    thicknessSlider:SetPoint("TOPLEFT", pulseCheck, "BOTTOMLEFT", 4, -HELPER_GAP)
-    thicknessSlider:SetScript("OnValueChanged", function(_, value)
-        value = math.floor(value + 0.5)
-        if value ~= db.pulseThickness then
-            db.pulseThickness = value
-            applyThickness()
-        end
-    end)
-    thicknessSlider:SetScript("OnMouseUp", function() firePulse() end)
+    local thicknessSlider = buildStepSlider(alertContainer, "Flash thickness",
+        function() return db.pulseThickness end,
+        function(value)
+            if value ~= db.pulseThickness then
+                db.pulseThickness = value
+                applyThickness()
+            end
+        end)
+    thicknessSlider:SetPoint("TOPLEFT", pulseCheck, "BOTTOMLEFT", 0, -BTN_GAP)
+    thicknessSlider:SetWidth(SLIDER_W)
+    thicknessSlider.Slider:HookScript("OnMouseUp", function() firePulse() end)
 
     -- Named-sound picker. Choosing a sound saves it and plays it once as a preview.
-    local soundDropdown = CreateFrame("DropdownButton", nil, alertContainer, "WowStyle1DropdownTemplate")
+    local soundDropdown = CreateFrame("DropdownButton", nil, alertContainer, "WowStyle2DropdownTemplate")
     soundDropdown:SetSize(160, ROW_H)
-    soundDropdown:SetPoint("TOPLEFT", thicknessSlider, "BOTTOMLEFT", -4, -HELPER_GAP)
+    soundDropdown:SetPoint("TOPLEFT", thicknessSlider, "BOTTOMLEFT", 0, -BTN_GAP)
     soundDropdown:SetDefaultText("Choose a sound")
     soundDropdown:SetupMenu(function(_, root)
         for _, preset in ipairs(SOUND_PRESETS) do
@@ -403,7 +390,7 @@ local function buildPanel()
     -- Replays the selected sound so it can be previewed at any time.
     local testBtn = CreateFrame("Button", nil, alertContainer, "UIPanelButtonTemplate")
     testBtn:SetSize(60, ROW_H)
-    testBtn:SetPoint("LEFT", soundDropdown, "RIGHT", ROW_GAP, 0)
+    testBtn:SetPoint("LEFT", soundDropdown, "RIGHT", BTN_GAP, 0)
     testBtn:SetText("Test")
     testBtn:SetScript("OnClick", function()
         PlaySound(db.soundId or DEFAULT_SOUND_ID, db.channel, true)
@@ -421,7 +408,7 @@ local function buildPanel()
         "Minimum time between two pings. Nodes noticed during the cooldown stay silent.",
         ROW_H, alertSection)
 
-    local cooldownDropdown = CreateFrame("DropdownButton", nil, cooldownContainer, "WowStyle1DropdownTemplate")
+    local cooldownDropdown = CreateFrame("DropdownButton", nil, cooldownContainer, "WowStyle2DropdownTemplate")
     cooldownDropdown:SetSize(160, ROW_H)
     cooldownDropdown:SetPoint("TOPLEFT", cooldownContainer, "TOPLEFT", 0, 0)
     cooldownDropdown:SetDefaultText("Cooldown")
@@ -440,7 +427,7 @@ local function buildPanel()
     local minimapSection, minimapContainer = makeContentSection(
         "Minimap",
         "Tracking circles for nearby nodes stay visible either way, so the alert keeps working.",
-        CB_H + ROW_GAP + CB_H + HELPER_GAP + 16, cooldownSection)
+        CB_H + ROW_GAP + CB_H + BTN_GAP + SLIDER_H, cooldownSection)
 
     local hideIconsCheck = CreateFrame("CheckButton", nil, minimapContainer, "UICheckButtonTemplate")
     hideIconsCheck:SetSize(CB_H, CB_H)
@@ -462,17 +449,18 @@ local function buildPanel()
         Display:UpdateMaps()
     end)
 
-    local circleSlider = buildSlider(minimapContainer, "Circle size")
-    circleSlider:SetPoint("TOPLEFT", mergeCheck, "BOTTOMLEFT", 4, -HELPER_GAP)
-    circleSlider:SetScript("OnValueChanged", function(_, value)
-        value = math.floor(value + 0.5)
-        if value ~= db.circleSize then
-            db.circleSize = value
+    local circleSlider = buildStepSlider(minimapContainer, "Circle size",
+        function() return db.circleSize end,
+        function(value)
+            if value ~= db.circleSize then
+                db.circleSize = value
 
-            -- Rebuild the minimap pins so the new size applies without moving.
-            Display:UpdateMaps()
-        end
-    end)
+                -- Rebuild the minimap pins so the new size applies without moving.
+                Display:UpdateMaps()
+            end
+        end)
+    circleSlider:SetPoint("TOPLEFT", mergeCheck, "BOTTOMLEFT", 0, -BTN_GAP)
+    circleSlider:SetWidth(SLIDER_W)
 
     -- Node Types
     local nodeTypes = {}
@@ -505,19 +493,12 @@ local function buildPanel()
         anchor = cb
     end
 
-    -- Footer (Close on the left, live state summary beside it)
-    local closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    closeBtn:SetSize(80, ROW_H)
-    closeBtn:SetPoint("BOTTOMLEFT", PAD, PAD)
-    closeBtn:SetText("Close")
-    closeBtn:SetScript("OnClick", function() f:Hide() end)
-
+    -- Footer: live state summary only. The corner X and Escape close the panel; no bottom Close button.
     local statusText = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    statusText:SetPoint("LEFT", closeBtn, "RIGHT", 8, 0)
-    statusText:SetPoint("RIGHT", f, "RIGHT", -PAD, 0)
-    statusText:SetPoint("BOTTOM", closeBtn, "BOTTOM", 0, 0)
+    statusText:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", PAD, PAD)
+    statusText:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PAD, PAD)
     statusText:SetHeight(ROW_H)
-    statusText:SetJustifyH("CENTER")
+    statusText:SetJustifyH("LEFT")
 
     local function updateStatus()
         if db.enabled or db.pulse then
@@ -541,10 +522,10 @@ local function buildPanel()
         db.channel = self:GetChecked() and "Master" or "SFX"
     end)
 
-    -- Section height = helper text + HELPER_GAP + content height + body insets.
+    -- Section height = measured helper text + helper gap + content height + border insets top and bottom.
     local function sizeContentSection(section)
-        local helperH = math.max(section.helper:GetStringHeight(), CB_H)
-        section:SetHeight(helperH + HELPER_GAP + section.container:GetHeight() + SECTION_INNER_PAD * 2)
+        local helperH = math.ceil(section.helper:GetStringHeight())
+        section:SetHeight(SECTION_INNER_PAD * 2 + helperH + HELPER_GAP + section.container:GetHeight())
     end
 
     local function resizePanel()
