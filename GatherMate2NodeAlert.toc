@@ -1,4 +1,4 @@
-## Interface: 11508
+## Interface: 11509
 ## Title: GatherMate2NodeAlert
 ## Notes: Plays the minimap ping sound when a GatherMate2 node enters minimap range.
 ## Version: 1.0.0
