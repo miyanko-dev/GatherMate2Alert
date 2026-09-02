@@ -1,4 +1,4 @@
-# GatherMate2NodeAlert
+# GatherMate2Alert
 
 Sound and visual alerts when a GatherMate2 node enters minimap tracking range, for World of Warcraft Classic Era (1.15.x).
 

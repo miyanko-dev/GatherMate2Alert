@@ -1,9 +1,9 @@
-local ADDON_NAME = "GatherMate2NodeAlert"
+local ADDON_NAME = "GatherMate2Alert"
 
 local REAPPEAR_AFTER = 180
 local ZONING_QUIET_TIME = 5
 local BUTTON_ICON = "Interface\\Icons\\INV_Misc_Bell_01"
-local PULSE_TEXTURE = "Interface\\AddOns\\GatherMate2NodeAlert\\pulse_ring"
+local PULSE_TEXTURE = "Interface\\AddOns\\GatherMate2Alert\\pulse_ring"
 local PULSE_COLOR = { 1, 0.82, 0 }
 local DEFAULT_SOUND_ID = 3175  -- SOUNDKIT.MAP_PING (minimap ping)
 
@@ -252,7 +252,7 @@ end
 local sliderCounter = 0
 local function buildStepSlider(parent, labelPrefix, getValue, setValue)
     sliderCounter = sliderCounter + 1
-    local slider = CreateFrame("Frame", "GatherMate2NodeAlertSlider" .. sliderCounter,
+    local slider = CreateFrame("Frame", "GatherMate2AlertSlider" .. sliderCounter,
         parent, "MinimalSliderWithSteppersTemplate")
     local Label = MinimalSliderWithSteppersMixin.Label
     local formatters = {
@@ -280,7 +280,7 @@ local function setCheckboxLabel(checkButton, text)
 end
 
 local function buildPanel()
-    local f = CreateFrame("Frame", "GatherMate2NodeAlertPanel", UIParent, "BackdropTemplate")
+    local f = CreateFrame("Frame", "GatherMate2AlertPanel", UIParent, "BackdropTemplate")
     f:SetSize(380, 1)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
@@ -559,7 +559,7 @@ local function buildPanel()
         resizePanel()
     end)
 
-    tinsert(UISpecialFrames, "GatherMate2NodeAlertPanel")
+    tinsert(UISpecialFrames, "GatherMate2AlertPanel")
     f:Hide()
     return f
 end
@@ -571,7 +571,7 @@ end
 
 -- Minimap button
 local function renderTooltip(tooltip)
-    tooltip:AddLine("GatherMate2NodeAlert")
+    tooltip:AddLine("GatherMate2Alert")
     tooltip:AddLine((db.enabled or db.pulse) and "Alert is on." or "Alert is off.", 1, 1, 1)
     tooltip:AddLine("|cffffd200Left-click|r opens the settings.", 1, 1, 1)
     tooltip:AddLine("|cffffd200Right-click|r toggles the alert.", 1, 1, 1)
@@ -633,8 +633,8 @@ events:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 events:SetScript("OnEvent", function(_, event, addonName)
     if event == "ADDON_LOADED" then
         if addonName == ADDON_NAME then
-            GatherMate2NodeAlertDB = GatherMate2NodeAlertDB or {}
-            db = GatherMate2NodeAlertDB
+            GatherMate2AlertDB = GatherMate2AlertDB or {}
+            db = GatherMate2AlertDB
             if db.enabled == nil then db.enabled = true end
             if db.pulse == nil then db.pulse = true end
             if db.hideIcons == nil then db.hideIcons = false end
