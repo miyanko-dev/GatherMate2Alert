@@ -2,7 +2,7 @@
 ## Title: GatherMate2Alert
 ## Notes: Plays the minimap ping sound when a GatherMate2 node enters minimap range.
 ## Version: 1.0.0
-## Author: MIYANKO
+## Author: miyanko
 ## IconTexture: 133706
 ## RequiredDeps: GatherMate2
 ## SavedVariables: GatherMate2AlertDB
