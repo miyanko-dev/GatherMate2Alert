@@ -1,5 +1,9 @@
 local ADDON_NAME = "GatherMate2Alert"
 
+-- Spaced name for everything the player reads. ADDON_NAME stays unspaced because it is the
+-- addon folder and the LibDBIcon registry key, neither of which may change.
+local ADDON_TITLE = "GatherMate2 Alert"
+
 local REAPPEAR_AFTER = 180
 local ZONING_QUIET_TIME = 5
 local BUTTON_ICON = "Interface\\Icons\\INV_Misc_Bell_01"
@@ -571,7 +575,7 @@ end
 
 -- Minimap button
 local function renderTooltip(tooltip)
-    tooltip:AddLine("GatherMate2Alert")
+    tooltip:AddLine(ADDON_TITLE)
     tooltip:AddLine((db.enabled or db.pulse) and "Alert is on." or "Alert is off.", 1, 1, 1)
     tooltip:AddLine("|cffffd200Left-click|r opens the settings.", 1, 1, 1)
     tooltip:AddLine("|cffffd200Right-click|r toggles the alert.", 1, 1, 1)
@@ -610,7 +614,7 @@ local function setupMinimapButton()
 
     local launcher = ldb:NewDataObject(ADDON_NAME, {
         type = "launcher",
-        text = ADDON_NAME,
+        text = ADDON_TITLE,
         icon = BUTTON_ICON,
         OnClick = function(_, button)
             if button == "RightButton" then

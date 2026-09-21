@@ -17,7 +17,7 @@ Sound and visual alerts when a GatherMate2 node enters minimap tracking range.
 
 1. Copy the `GatherMate2Alert/` folder into `World of Warcraft/_classic_era_/Interface/AddOns/`.
 2. Restart the game or `/reload`.
-3. Enable **GatherMate2Alert** in the AddOns list.
+3. Enable **GatherMate2 Alert** in the AddOns list.
 
 ## Requirements
 
