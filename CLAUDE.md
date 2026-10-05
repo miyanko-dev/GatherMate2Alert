@@ -3,7 +3,6 @@
 ## Target
 
 - WoW Classic Era 1.15.x only, `## Interface: 11509`.
-- `main` holds the Classic Era version. `1.15.x-backup` keeps a copy and stays untouched.
 - Verify every API against Gethe `wow-ui-source` and Ketho `BlizzardInterfaceResources`, branch `classic_era`.
 
 ## Rules
